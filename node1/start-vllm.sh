@@ -9,7 +9,8 @@ MODEL_NAME="${MODEL_NAME:-meta-llama/Llama-3.1-70B-Instruct}"
 TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-2}"
 PIPELINE_PARALLEL_SIZE="${PIPELINE_PARALLEL_SIZE:-2}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
-VLLM_PORT="${VLLM_PORT:-8000}"
+# Use port 8080 by default to avoid conflicts with Ray internal ports
+VLLM_PORT="${VLLM_PORT:-8080}"
 
 echo "============================================"
 echo "Checking Ray cluster status..."
