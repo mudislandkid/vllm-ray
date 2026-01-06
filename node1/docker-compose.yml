@@ -18,6 +18,9 @@ services:
       - MAX_MODEL_LEN=${MAX_MODEL_LEN:-4096}
       # Critical: Set the host IP for vLLM and Ray to use
       - VLLM_HOST_IP=${VLLM_HOST_IP:-10.15.105.105}
+      # Disable Ray metrics to avoid Ray 2.53 bug (ray-project/ray#59665)
+      - RAY_DISABLE_DOCKER_CPU_WARNING=1
+      - RAY_metrics_report_interval_ms=0
       # Network interface for distributed communication (GLOO/NCCL)
       - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
       - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
