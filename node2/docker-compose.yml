@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  ray-worker:
+    image: vllm/vllm-openai:latest
+    container_name: ray-worker
+    hostname: ray-worker
+    network_mode: host
+    ipc: host
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+      - ./data:/data
+    command: >
+      ray start
+      --address='${RAY_HEAD_IP:-10.15.105.105}:6379'
+      --num-gpus=2
+      --block
+    shm_size: 10gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
