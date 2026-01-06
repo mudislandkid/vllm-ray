@@ -1,8 +1,11 @@
-# Node 1 - Ray Head + vLLM with shared Ray session volume
+# Node 1 - Ray Head + vLLM (same image, same Ray version)
 
 services:
   ray-head:
-    image: rayproject/ray:latest-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ray-vllm:local
     container_name: ray-head
     hostname: ray-head
     network_mode: host
@@ -12,10 +15,11 @@ services:
     user: root
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+      - HF_TOKEN=${HF_TOKEN}
     volumes:
       - ./models:/models
       - ./data:/data
-      - ray-session:/tmp/ray
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
     command: >
       ray start --head
       --port=6379
@@ -33,7 +37,7 @@ services:
               capabilities: [gpu]
 
   vllm-server:
-    image: vllm/vllm-openai:latest
+    image: ray-vllm:local
     container_name: vllm-server
     hostname: vllm-server
     network_mode: host
@@ -48,9 +52,9 @@ services:
       - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
       - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
     volumes:
-      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+      - ./models:/models
       - ./data:/data
-      - ray-session:/tmp/ray
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
     depends_on:
       - ray-head
     entrypoint: ["/bin/bash", "-c"]
@@ -63,9 +67,10 @@ services:
         ray status
 
         echo "Starting vLLM server..."
-        vllm serve ${MODEL_NAME:-meta-llama/Llama-3.1-70B-Instruct} \
+        python -m vllm.entrypoints.openai.api_server \
           --host 0.0.0.0 \
           --port ${VLLM_PORT:-8000} \
+          --model ${MODEL_NAME:-meta-llama/Llama-3.1-70B-Instruct} \
           --tensor-parallel-size ${TENSOR_PARALLEL_SIZE:-2} \
           --pipeline-parallel-size ${PIPELINE_PARALLEL_SIZE:-2} \
           --distributed-executor-backend ray \
@@ -80,7 +85,3 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
-volumes:
-  ray-session:
-    driver: local

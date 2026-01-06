@@ -1,9 +1,11 @@
-# Node 2 - Ray Worker
-# Connects to Ray head on Node 1
+# Node 2 - Ray Worker (same image as Node 1)
 
 services:
   ray-worker:
-    image: rayproject/ray:latest-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ray-vllm:local
     container_name: ray-worker
     hostname: ray-worker
     network_mode: host
@@ -17,6 +19,7 @@ services:
     volumes:
       - ./models:/models
       - ./data:/data
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
     command: >
       ray start
       --address=${RAY_HEAD_IP}:6379
