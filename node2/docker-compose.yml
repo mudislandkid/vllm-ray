@@ -16,6 +16,9 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - RAY_HEAD_IP=${RAY_HEAD_IP:-10.15.105.105}
+      - VLLM_HOST_IP=${VLLM_HOST_IP:-10.15.105.107}
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
     volumes:
       - ./models:/models
       - ./data:/data
