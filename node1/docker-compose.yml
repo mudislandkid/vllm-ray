@@ -1,3 +1,6 @@
+# Node 1 - Ray Head + vLLM Server
+# Start Ray first, verify cluster, then start vLLM manually
+
 services:
   ray-head:
     image: vllm/vllm-openai:latest
@@ -10,53 +13,30 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
-      - VLLM_STARTUP_DELAY=${VLLM_STARTUP_DELAY:-60}
-      - MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-70B-Instruct}
-      - VLLM_PORT=${VLLM_PORT:-8000}
-      - TENSOR_PARALLEL_SIZE=${TENSOR_PARALLEL_SIZE:-2}
-      - PIPELINE_PARALLEL_SIZE=${PIPELINE_PARALLEL_SIZE:-2}
-      - MAX_MODEL_LEN=${MAX_MODEL_LEN:-4096}
       # Critical: Set the host IP for vLLM and Ray to use
       - VLLM_HOST_IP=${VLLM_HOST_IP:-10.15.105.105}
-      # Disable Ray metrics to avoid Ray 2.53 bug (ray-project/ray#59665)
-      - RAY_DISABLE_DOCKER_CPU_WARNING=1
-      - RAY_metrics_report_interval_ms=0
       # Network interface for distributed communication (GLOO/NCCL)
       - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
       - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
-      - TP_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
     volumes:
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
       - ./data:/data
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        echo "Starting Ray head on IP: $VLLM_HOST_IP"
+        echo "============================================"
+        echo "Starting Ray HEAD node on IP: $VLLM_HOST_IP"
+        echo "============================================"
 
-        # Start Ray head with explicit node IP address
         ray start --head \
           --port=6379 \
           --node-ip-address=$VLLM_HOST_IP \
           --dashboard-host=0.0.0.0 \
           --dashboard-port=8265 \
-          --num-gpus=2
-
-        echo "Ray head started. Waiting $VLLM_STARTUP_DELAY seconds for workers to connect..."
-        sleep $VLLM_STARTUP_DELAY
-
-        echo "Checking Ray cluster status..."
-        ray status
-
-        echo "Starting vLLM server..."
-        vllm serve $MODEL_NAME \
-          --host 0.0.0.0 \
-          --port $VLLM_PORT \
-          --tensor-parallel-size $TENSOR_PARALLEL_SIZE \
-          --pipeline-parallel-size $PIPELINE_PARALLEL_SIZE \
-          --distributed-executor-backend ray \
-          --trust-remote-code \
-          --dtype auto \
-          --max-model-len $MAX_MODEL_LEN
+          --num-gpus=2 \
+          --min-worker-port=10000 \
+          --max-worker-port=19999 \
+          --block
     shm_size: 10gb
     deploy:
       resources:
