@@ -11,6 +11,10 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
       - RAY_HEAD_IP=${RAY_HEAD_IP:-10.15.105.105}
+      # Network interface for distributed communication (GLOO/NCCL)
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+      - TP_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
     volumes:
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
       - ./data:/data
