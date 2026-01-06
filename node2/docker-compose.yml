@@ -10,6 +10,7 @@ services:
     ipc: host
     restart: unless-stopped
     runtime: nvidia
+    user: root
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - RAY_HEAD_IP=${RAY_HEAD_IP:-10.15.105.105}

@@ -9,6 +9,7 @@ services:
     ipc: host
     restart: unless-stopped
     runtime: nvidia
+    user: root
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
     volumes:
@@ -39,6 +40,7 @@ services:
     ipc: host
     restart: on-failure
     runtime: nvidia
+    user: root
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
