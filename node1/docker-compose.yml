@@ -1,4 +1,4 @@
-# Node 1 - Ray Head + vLLM (single container)
+# Node 1 - Ray Head + vLLM with shared Ray session volume
 
 services:
   ray-head:
@@ -16,6 +16,40 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ./models:/models
+      - ./data:/data
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+      - ray-session:/tmp/ray
+    command: >
+      ray start --head
+      --port=6379
+      --dashboard-host=0.0.0.0
+      --dashboard-port=8265
+      --num-gpus=2
+      --block
+    shm_size: 10gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  vllm-server:
+    image: ray-vllm:local
+    container_name: vllm-server
+    hostname: vllm-server
+    network_mode: host
+    ipc: host
+    restart: on-failure
+    runtime: nvidia
+    user: root
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_TOKEN=${HF_TOKEN}
+      - RAY_ADDRESS=${VLLM_HOST_IP:-10.15.105.105}:6379
       - VLLM_HOST_IP=${VLLM_HOST_IP:-10.15.105.105}
       - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
       - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
@@ -23,17 +57,13 @@ services:
       - ./models:/models
       - ./data:/data
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+      - ray-session:/tmp/ray
+    depends_on:
+      - ray-head
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        echo "Starting Ray head..."
-        ray start --head \
-          --port=6379 \
-          --dashboard-host=0.0.0.0 \
-          --dashboard-port=8265 \
-          --num-gpus=2
-
-        echo "Waiting ${VLLM_STARTUP_DELAY:-60}s for workers to connect..."
+        echo "Waiting for Ray cluster to be ready..."
         sleep ${VLLM_STARTUP_DELAY:-60}
 
         echo "Ray cluster status:"
@@ -58,3 +88,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+volumes:
+  ray-session:
+    driver: local
