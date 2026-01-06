@@ -1,4 +1,4 @@
-# Node 1 - Ray Head + vLLM (same image, same Ray version)
+# Node 1 - Ray Head + vLLM with shared Ray session volume
 
 services:
   ray-head:
@@ -20,6 +20,7 @@ services:
       - ./models:/models
       - ./data:/data
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+      - ray-session:/tmp/ray
     command: >
       ray start --head
       --port=6379
@@ -56,6 +57,7 @@ services:
       - ./models:/models
       - ./data:/data
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+      - ray-session:/tmp/ray
     depends_on:
       - ray-head
     entrypoint: ["/bin/bash", "-c"]
@@ -86,3 +88,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+volumes:
+  ray-session:
+    driver: local
