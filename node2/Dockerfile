@@ -1,18 +1,14 @@
-# Custom Dockerfile for Ray Worker
-# Use this if you need to customize the environment
-# Otherwise, the default vllm/vllm-openai:latest image works out of the box
+# Dockerfile for Ray + vLLM (unified image)
+# Based on rayproject/ray:latest-gpu with vLLM installed
 
-FROM rayproject/ray:2.43.0-py310-gpu
+FROM rayproject/ray:latest-gpu
 
-# Install vLLM with compatible dependencies
-# All nodes must have vLLM installed for distributed inference
-# Force reinstall numpy to avoid binary incompatibility
-RUN pip install --no-cache-dir --force-reinstall numpy && \
-    pip install --no-cache-dir vllm
+USER root
 
-# Set working directory
+# Install vLLM
+RUN pip install --no-cache-dir vllm
+
+# Switch back to ray user (optional, or keep root)
+# USER ray
+
 WORKDIR /workspace
-
-# Default command (can be overridden in docker-compose)
-# Note: --address will be set via docker-compose
-CMD ["ray", "start", "--block"]
