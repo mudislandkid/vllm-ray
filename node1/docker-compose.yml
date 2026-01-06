@@ -10,39 +10,6 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
-    volumes:
-      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
-      - ./data:/data
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        ray start --head \
-          --port=6379 \
-          --dashboard-host=0.0.0.0 \
-          --dashboard-port=8265 \
-          --num-gpus=2 \
-          --block
-    shm_size: 10gb
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  vllm-server:
-    image: vllm/vllm-openai:latest
-    container_name: vllm-server
-    hostname: vllm-server
-    network_mode: host
-    ipc: host
-    restart: on-failure
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - HF_TOKEN=${HF_TOKEN}
-      - RAY_ADDRESS=127.0.0.1:6379
       - VLLM_STARTUP_DELAY=${VLLM_STARTUP_DELAY:-60}
       - MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-70B-Instruct}
       - VLLM_PORT=${VLLM_PORT:-8000}
@@ -52,16 +19,23 @@ services:
     volumes:
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
       - ./data:/data
-    depends_on:
-      - ray-head
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        echo 'Waiting for Ray cluster to be ready...'
+        # Start Ray head in background
+        ray start --head \
+          --port=6379 \
+          --dashboard-host=0.0.0.0 \
+          --dashboard-port=8265 \
+          --num-gpus=2
+
+        echo "Ray head started. Waiting $VLLM_STARTUP_DELAY seconds for workers to connect..."
         sleep $VLLM_STARTUP_DELAY
-        echo 'Checking Ray cluster status...'
-        ray status || exit 1
-        echo 'Starting vLLM server...'
+
+        echo "Checking Ray cluster status..."
+        ray status
+
+        echo "Starting vLLM server..."
         vllm serve $MODEL_NAME \
           --host 0.0.0.0 \
           --port $VLLM_PORT \
