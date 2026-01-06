@@ -1,8 +1,6 @@
 # Alternative docker-compose that builds from Dockerfile
 # Use: docker compose -f docker-compose.build.yml up -d
 
-version: '3.8'
-
 services:
   ray-worker:
     build:
@@ -18,14 +16,17 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
+      - RAY_HEAD_IP=${RAY_HEAD_IP:-10.15.105.105}
     volumes:
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
       - ./data:/data
-    command: >
-      ray start
-      --address='${RAY_HEAD_IP:-10.15.105.105}:6379'
-      --num-gpus=2
-      --block
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        ray start \
+          --address="${RAY_HEAD_IP}:6379" \
+          --num-gpus=2 \
+          --block
     shm_size: 10gb
     deploy:
       resources:
