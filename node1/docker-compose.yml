@@ -16,6 +16,10 @@ services:
       - TENSOR_PARALLEL_SIZE=${TENSOR_PARALLEL_SIZE:-2}
       - PIPELINE_PARALLEL_SIZE=${PIPELINE_PARALLEL_SIZE:-2}
       - MAX_MODEL_LEN=${MAX_MODEL_LEN:-4096}
+      # Network interface for distributed communication (GLOO/NCCL)
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+      - TP_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
     volumes:
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
       - ./data:/data
