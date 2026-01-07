@@ -1,19 +1,15 @@
 # Optimized Dockerfile for vLLM with FlashInfer
-# Optimized for: NVIDIA L40, Qwen 2.5-72B, Agentic workloads
+# Optimized for: NVIDIA L40, Qwen3-30B-A3B, Agentic workloads
 
 FROM vllm/vllm-openai:latest
 
 USER root
 
-# Install FlashInfer for better attention performance
-# and hf_transfer for faster model downloads
-RUN pip install --no-cache-dir \
-    hf_transfer \
-    flashinfer -i https://flashinfer.ai/whl/cu124/torch2.4/
+# Ensure python symlink exists (vLLM image uses python3)
+RUN ln -sf /usr/bin/python3 /usr/bin/python || true
+
+# Install hf_transfer for faster model downloads
+RUN pip install --no-cache-dir hf_transfer
 
 # Create workspace
 WORKDIR /workspace
-
-# Healthcheck endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1

@@ -42,10 +42,10 @@ services:
       - |
         echo "============================================"
         echo "Starting vLLM server for Qwen3-30B-A3B"
-        echo "Configuration: 2x L40 GPUs, ${MAX_MODEL_LEN:-131072} context"
+        echo "Configuration: 2x L40 GPUs"
         echo "============================================"
 
-        python -m vllm.entrypoints.openai.api_server \
+        python3 -m vllm.entrypoints.openai.api_server \
           --host 0.0.0.0 \
           --port ${VLLM_PORT:-8000} \
           --model ${MODEL_NAME:-Qwen/Qwen3-30B-A3B-Instruct-2507} \
