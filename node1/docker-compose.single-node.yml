@@ -1,0 +1,76 @@
+# Optimized Single-Node vLLM Configuration
+# For: 2x NVIDIA L40 (96GB total) with Qwen3-30B-A3B-Instruct-2507
+# Optimized for: Agentic coding with tool calling, 262K context
+
+services:
+  vllm-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.optimized
+    image: vllm-qwen3:local
+    container_name: vllm-server
+    hostname: vllm-server
+    network_mode: host
+    ipc: host
+    restart: unless-stopped
+    runtime: nvidia
+    user: root
+    environment:
+      # GPU Configuration
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0,1
+
+      # HuggingFace Configuration
+      - HF_TOKEN=${HF_TOKEN}
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+
+      # vLLM Performance Tuning
+      - VLLM_ATTENTION_BACKEND=${VLLM_ATTENTION_BACKEND:-FLASHINFER}
+      - VLLM_USE_V1=1
+
+      # NCCL Optimizations for multi-GPU
+      - NCCL_P2P_LEVEL=NVL
+      - NCCL_SHM_DISABLE=0
+      - NCCL_IB_DISABLE=1
+
+    volumes:
+      - ./models:/models
+      - ./data:/data
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "============================================"
+        echo "Starting vLLM server for Qwen3-30B-A3B"
+        echo "Configuration: 2x L40 GPUs, ${MAX_MODEL_LEN:-131072} context"
+        echo "============================================"
+
+        python -m vllm.entrypoints.openai.api_server \
+          --host 0.0.0.0 \
+          --port ${VLLM_PORT:-8000} \
+          --model ${MODEL_NAME:-Qwen/Qwen3-30B-A3B-Instruct-2507} \
+          --tensor-parallel-size 2 \
+          --dtype bfloat16 \
+          --max-model-len ${MAX_MODEL_LEN:-131072} \
+          --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION:-0.90} \
+          --enable-prefix-caching \
+          --enable-chunked-prefill \
+          --max-num-seqs ${MAX_NUM_SEQS:-16} \
+          --max-num-batched-tokens ${MAX_BATCHED_TOKENS:-32768} \
+          --trust-remote-code \
+          --disable-log-requests \
+          --served-model-name qwen3-30b
+    shm_size: 16gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
