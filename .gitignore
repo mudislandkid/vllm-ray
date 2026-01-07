@@ -1,0 +1,21 @@
+# Environment files (contain secrets)
+.env
+.env.*
+!.env.example
+!.env.single-node.example
+
+# Model cache
+models/
+*.bin
+*.safetensors
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+logs/
+
+# Data
+data/
