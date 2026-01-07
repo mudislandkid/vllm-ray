@@ -187,16 +187,13 @@ fi
 
 # Check for PyTorch
 if ! python -c "import torch" 2>/dev/null; then
-    echo ""
-    echo "  PyTorch not installed. For GPU benchmarks, install with:"
-    echo ""
-    echo "    source ${VENV_DIR}/bin/activate"
-    echo "    pip install torch  # CPU only"
-    echo ""
-    echo "  Or for CUDA support:"
-    echo "    pip install torch --index-url https://download.pytorch.org/whl/cu124"
-    echo ""
-else
+    print_installing "torch (PyTorch with CUDA)"
+    pip install torch --index-url https://download.pytorch.org/whl/cu124 --quiet
+    print_status "torch installed"
+fi
+
+# Verify PyTorch CUDA
+if python -c "import torch" 2>/dev/null; then
     print_skip "torch (PyTorch)"
     TORCH_CUDA=$(python -c "import torch; print(torch.cuda.is_available())" 2>/dev/null)
     if [[ "$TORCH_CUDA" == "True" ]]; then
