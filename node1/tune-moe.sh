@@ -57,7 +57,7 @@ echo "This will test various kernel configurations and find the optimal settings
 echo ""
 
 # Run the tuning script inside the container
-docker exec -it "$CONTAINER_NAME" python3 << 'PYTHON_SCRIPT'
+docker exec -i "$CONTAINER_NAME" python3 << 'PYTHON_SCRIPT'
 import torch
 import json
 import time

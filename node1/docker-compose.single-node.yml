@@ -38,6 +38,8 @@ services:
       - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
       # MoE tuned configs for L40
       - ./moe-configs:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/configs:ro
+      # MoE tuning script
+      - ./tune-moe.sh:/workspace/tune-moe.sh:ro
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
