@@ -69,7 +69,7 @@ RESPONSE=$(curl -s "$VLLM_URL/v1/chat/completions" \
                 \"role\": \"user\",
                 \"content\": [
                     {\"type\": \"text\", \"text\": \"Describe this image briefly in one sentence.\"},
-                    {\"type\": \"image_url\", \"image_url\": {\"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg\"}}
+                    {\"type\": \"image_url\", \"image_url\": {\"url\": \"https://picsum.photos/id/237/400/300\"}}
                 ]
             }
         ],
