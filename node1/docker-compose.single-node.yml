@@ -24,6 +24,10 @@ services:
       - HF_TOKEN=${HF_TOKEN}
       - HF_HUB_ENABLE_HF_TRANSFER=1
 
+      # Network interface for distributed communication
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+
       # NCCL Optimizations for multi-GPU
       - NCCL_SHM_DISABLE=0
       - NCCL_IB_DISABLE=1
