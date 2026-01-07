@@ -6,6 +6,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="${SCRIPT_DIR}/.venv"
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -144,43 +147,67 @@ else
 fi
 
 echo ""
-echo "Installing Python packages..."
+echo "Setting up Python virtual environment..."
 echo ""
 
-# Check for pip
-if ! command -v pip3 &> /dev/null; then
-    print_installing "python3-pip"
-    $SUDO $PKG_INSTALL python3-pip
+# Check for python3-venv
+if ! python3 -m venv --help &> /dev/null; then
+    print_installing "python3-venv"
+    $SUDO $PKG_INSTALL python3-venv
 fi
 
+# Create virtual environment
+if [[ ! -d "$VENV_DIR" ]]; then
+    print_installing "virtual environment at .venv/"
+    python3 -m venv "$VENV_DIR"
+    print_status "Virtual environment created"
+else
+    print_skip "virtual environment (.venv/)"
+fi
+
+# Activate venv
+source "$VENV_DIR/bin/activate"
+print_status "Virtual environment activated"
+
+echo ""
+echo "Installing Python packages in venv..."
+echo ""
+
+# Upgrade pip
+pip install --upgrade pip --quiet
+
 # numpy
-if ! python3 -c "import numpy" 2>/dev/null; then
+if ! python -c "import numpy" 2>/dev/null; then
     print_installing "numpy"
-    pip3 install --user numpy
+    pip install numpy --quiet
     print_status "numpy installed"
 else
     print_skip "numpy"
 fi
 
 # Check for PyTorch
-if ! python3 -c "import torch" 2>/dev/null; then
+if ! python -c "import torch" 2>/dev/null; then
     echo ""
     echo "  PyTorch not installed. For GPU benchmarks, install with:"
     echo ""
-    echo "    pip3 install torch  # CPU only"
+    echo "    source ${VENV_DIR}/bin/activate"
+    echo "    pip install torch  # CPU only"
     echo ""
     echo "  Or for CUDA support:"
-    echo "    pip3 install torch --index-url https://download.pytorch.org/whl/cu124"
+    echo "    pip install torch --index-url https://download.pytorch.org/whl/cu124"
     echo ""
 else
     print_skip "torch (PyTorch)"
-    TORCH_CUDA=$(python3 -c "import torch; print(torch.cuda.is_available())" 2>/dev/null)
+    TORCH_CUDA=$(python -c "import torch; print(torch.cuda.is_available())" 2>/dev/null)
     if [[ "$TORCH_CUDA" == "True" ]]; then
         echo "         CUDA support: ✓"
     else
         echo "         CUDA support: ✗ (CPU only)"
     fi
 fi
+
+# Deactivate venv
+deactivate
 
 echo ""
 echo "Making benchmark scripts executable..."

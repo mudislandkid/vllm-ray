@@ -16,10 +16,16 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="${SCRIPT_DIR}/.venv"
 REPORT_DIR="${SCRIPT_DIR}/reports"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 HOSTNAME=$(hostname)
 REPORT_FILE="${REPORT_DIR}/${HOSTNAME}_benchmark_${TIMESTAMP}.txt"
+
+# Activate virtual environment if it exists
+if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+    source "${VENV_DIR}/bin/activate"
+fi
 
 # Default settings
 REMOTE_HOST="${REMOTE_HOST:-}"

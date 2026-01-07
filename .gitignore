@@ -12,10 +12,15 @@ models/
 # Python
 __pycache__/
 *.pyc
+.venv/
+venv/
 
 # Logs
 *.log
 logs/
+
+# Benchmark reports
+benchmarks/reports/
 
 # Data
 data/
