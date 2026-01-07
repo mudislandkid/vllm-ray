@@ -1,11 +1,11 @@
 #!/bin/bash
-# Quick inference test for vLLM Qwen3-30B-A3B server
+# Quick inference test for vLLM Qwen3-VL-30B-A3B server
 
 VLLM_URL="${VLLM_URL:-http://localhost:8000}"
-MODEL_NAME="${MODEL_NAME:-qwen3-30b}"
+MODEL_NAME="${MODEL_NAME:-qwen3-vl}"
 
 echo "============================================"
-echo "vLLM Inference Test"
+echo "vLLM Vision-Language Inference Test"
 echo "Server: $VLLM_URL"
 echo "Model: $MODEL_NAME"
 echo "============================================"
@@ -31,13 +31,15 @@ for m in data.get('data', []):
 " 2>/dev/null || echo "   (Could not parse models)"
 echo
 
-# Test 3: Simple completion
-echo "3. Simple Completion Test..."
-RESPONSE=$(curl -s "$VLLM_URL/v1/completions" \
+# Test 3: Text-only chat completion
+echo "3. Text-Only Chat Test..."
+RESPONSE=$(curl -s "$VLLM_URL/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$MODEL_NAME\",
-        \"prompt\": \"Write a Python function that calculates factorial:\",
+        \"messages\": [
+            {\"role\": \"user\", \"content\": \"Write a Python function that calculates factorial. Be concise.\"}
+        ],
         \"max_tokens\": 150,
         \"temperature\": 0.7
     }")
@@ -45,9 +47,9 @@ echo "$RESPONSE" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 if 'choices' in data:
-    text = data['choices'][0]['text']
+    content = data['choices'][0]['message']['content']
     print('   Response:')
-    for line in text.strip().split('\n')[:15]:
+    for line in content.strip().split('\n')[:12]:
         print(f'   {line}')
     usage = data.get('usage', {})
     print(f\"\n   Tokens: {usage.get('prompt_tokens', '?')} prompt, {usage.get('completion_tokens', '?')} completion\")
@@ -56,15 +58,47 @@ else:
 " 2>/dev/null
 echo
 
-# Test 4: Chat completion with tool calling
-echo "4. Chat Completion with Tool Definition..."
+# Test 4: Vision test with URL image
+echo "4. Vision Test (URL image)..."
+RESPONSE=$(curl -s "$VLLM_URL/v1/chat/completions" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"model\": \"$MODEL_NAME\",
+        \"messages\": [
+            {
+                \"role\": \"user\",
+                \"content\": [
+                    {\"type\": \"text\", \"text\": \"Describe this image briefly in one sentence.\"},
+                    {\"type\": \"image_url\", \"image_url\": {\"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg\"}}
+                ]
+            }
+        ],
+        \"max_tokens\": 100
+    }")
+echo "$RESPONSE" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+if 'choices' in data:
+    content = data['choices'][0]['message']['content']
+    print(f'   Response: {content[:200]}')
+    usage = data.get('usage', {})
+    print(f\"   Tokens: {usage.get('prompt_tokens', '?')} prompt, {usage.get('completion_tokens', '?')} completion\")
+elif 'error' in data:
+    print(f\"   Error: {data['error'].get('message', data['error'])}\")
+else:
+    print(f\"   Unexpected: {data}\")
+" 2>/dev/null
+echo
+
+# Test 5: Tool calling test
+echo "5. Tool Calling Test..."
 RESPONSE=$(curl -s "$VLLM_URL/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$MODEL_NAME\",
         \"messages\": [
             {\"role\": \"system\", \"content\": \"You are a helpful assistant with access to tools.\"},
-            {\"role\": \"user\", \"content\": \"What is the current weather in San Francisco? Use the get_weather tool.\"}
+            {\"role\": \"user\", \"content\": \"What is the weather in San Francisco? Use the get_weather tool.\"}
         ],
         \"tools\": [
             {
@@ -75,10 +109,7 @@ RESPONSE=$(curl -s "$VLLM_URL/v1/chat/completions" \
                     \"parameters\": {
                         \"type\": \"object\",
                         \"properties\": {
-                            \"location\": {
-                                \"type\": \"string\",
-                                \"description\": \"City name\"
-                            }
+                            \"location\": {\"type\": \"string\", \"description\": \"City name\"}
                         },
                         \"required\": [\"location\"]
                     }
@@ -99,7 +130,7 @@ if 'choices' in data:
             func = tc.get('function', {})
             print(f\"   Tool: {func.get('name')}({func.get('arguments')})\")
     elif msg.get('content'):
-        print(f\"   Response: {msg['content'][:200]}...\")
+        print(f\"   Response: {msg['content'][:200]}\")
     usage = data.get('usage', {})
     print(f\"   Tokens: {usage.get('prompt_tokens', '?')} prompt, {usage.get('completion_tokens', '?')} completion\")
 else:
@@ -107,17 +138,17 @@ else:
 " 2>/dev/null
 echo
 
-# Test 5: Latency test
-echo "5. Latency Test (5 requests)..."
+# Test 6: Latency test
+echo "6. Latency Test (5 requests)..."
 total_time=0
 for i in {1..5}; do
     start=$(python3 -c "import time; print(time.time())")
-    curl -s "$VLLM_URL/v1/completions" \
+    curl -s "$VLLM_URL/v1/chat/completions" \
         -H "Content-Type: application/json" \
         -d "{
             \"model\": \"$MODEL_NAME\",
-            \"prompt\": \"Hello\",
-            \"max_tokens\": 20
+            \"messages\": [{\"role\": \"user\", \"content\": \"Hi\"}],
+            \"max_tokens\": 10
         }" > /dev/null
     end=$(python3 -c "import time; print(time.time())")
     elapsed=$(python3 -c "print(f'{($end - $start)*1000:.0f}')")
