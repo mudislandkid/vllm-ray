@@ -49,7 +49,7 @@ services:
           --max-model-len ${MAX_MODEL_LEN:-32768} \
           --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION:-0.90} \
           --max-num-seqs ${MAX_NUM_SEQS:-8} \
-          --limit-mm-per-prompt image=4 \
+          --limit-mm-per-prompt '{"image": 4}' \
           --trust-remote-code \
           --disable-log-requests \
           --served-model-name qwen3-vl
