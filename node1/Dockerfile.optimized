@@ -1,5 +1,5 @@
 # Optimized Dockerfile for vLLM with FlashInfer
-# Optimized for: NVIDIA L40, Qwen3-30B-A3B, Agentic workloads
+# Optimized for: NVIDIA L40, Qwen3-VL-30B-A3B, Agentic workloads
 
 FROM vllm/vllm-openai:latest
 
@@ -10,6 +10,10 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python || true
 
 # Install hf_transfer for faster model downloads
 RUN pip install --no-cache-dir hf_transfer
+
+# Install FlashInfer for MoE models (required for Qwen3-VL MoE)
+# Using CUDA 12.4 + PyTorch 2.4 wheel
+RUN pip install --no-cache-dir flashinfer-python -i https://flashinfer.ai/whl/cu124/torch2.6/
 
 # Create workspace
 WORKDIR /workspace
