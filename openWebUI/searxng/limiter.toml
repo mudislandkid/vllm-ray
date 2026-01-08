@@ -1,0 +1,5 @@
+# SearXNG Rate Limiter Configuration
+# Disabled for private instance use with Open WebUI
+
+[botdetection.ip_limit]
+link_token = false
