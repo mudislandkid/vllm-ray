@@ -14,6 +14,9 @@ services:
       - OPENAI_API_BASE_URL=http://${VLLM_HOST:-host.docker.internal}:${VLLM_PORT:-8000}/v1
       - OPENAI_API_KEY=Empty
 
+      # Disable Ollama (we're using vLLM only)
+      - ENABLE_OLLAMA_API=False
+
       # Web Search Configuration
       - ENABLE_RAG_WEB_SEARCH=True
       - RAG_WEB_SEARCH_ENGINE=searxng
