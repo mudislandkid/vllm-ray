@@ -23,11 +23,5 @@ server:
 
 ui:
   static_use_hash: true
-  default_theme: auto
+  default_theme: simple
   results_on_new_tab: false
-
-enabled_plugins:
-  - 'Hash plugin'
-  - 'Self Information'
-  - 'Tracker URL remover'
-  - 'Ahmia blacklist'
