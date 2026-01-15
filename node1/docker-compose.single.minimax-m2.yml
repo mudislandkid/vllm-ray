@@ -1,0 +1,80 @@
+# Optimized Single-Node vLLM Configuration
+# For: 2x NVIDIA L40 (96GB total) with MiniMax-M2.1
+# Optimized for: Coding, agentic workflows, tool calling (text-only)
+
+services:
+  vllm-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.optimized
+    image: vllm-qwen3:local
+    container_name: vllm-server
+    hostname: vllm-server
+    network_mode: host
+    ipc: host
+    restart: unless-stopped
+    runtime: nvidia
+    user: root
+    environment:
+      # GPU Configuration
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0,1
+
+      # HuggingFace Configuration
+      - HF_TOKEN=${HF_TOKEN}
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+
+      # Network interface for distributed communication
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-ens33}
+
+      # NCCL Optimizations for multi-GPU
+      - NCCL_SHM_DISABLE=0
+      - NCCL_IB_DISABLE=1
+
+      # Memory optimization for MiniMax-M2
+      - PYTORCH_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
+      - VLLM_SLEEP_WHEN_IDLE=1
+
+    volumes:
+      - ./models:/models
+      - ./data:/data
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "============================================"
+        echo "Starting vLLM server for MiniMax-M2.1"
+        echo "Configuration: 2x L40 GPUs (Text-Only)"
+        echo "Model: ${MODEL_NAME}"
+        echo "============================================"
+
+        python3 -m vllm.entrypoints.openai.api_server \
+          --host 0.0.0.0 \
+          --port ${VLLM_PORT:-8000} \
+          --model ${MODEL_NAME:-mratsim/MiniMax-M2.1-FP8-INT4-AWQ} \
+          --served-model-name ${SERVED_MODEL_NAME:-minimax-m2.1} \
+          --tensor-parallel-size 2 \
+          --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION:-0.93} \
+          --max-model-len ${MAX_MODEL_LEN:-32768} \
+          --max-num-seqs ${MAX_NUM_SEQS:-8} \
+          --trust-remote-code \
+          --disable-log-requests \
+          --enable-auto-tool-choice \
+          --tool-call-parser minimax_m2 \
+          --reasoning-parser minimax_m2 \
+          --override-generation-config '{"temperature": 1, "top_p": 0.95, "top_k": 40, "repetition_penalty": 1.1, "frequency_penalty": 0.40}'
+    shm_size: 16gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 240s
