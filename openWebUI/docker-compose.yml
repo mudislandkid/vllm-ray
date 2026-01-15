@@ -1,0 +1,47 @@
+# Open WebUI with SearXNG Web Search
+# Connects to vLLM backend for inference
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "${WEBUI_PORT:-3000}:8080"
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      # vLLM Backend Configuration
+      - OPENAI_API_BASE_URL=http://${VLLM_HOST:-host.docker.internal}:${VLLM_PORT:-8000}/v1
+      - OPENAI_API_KEY=Empty
+
+      # Disable Ollama (we're using vLLM only)
+      - ENABLE_OLLAMA_API=False
+
+      # Web Search Configuration
+      - ENABLE_RAG_WEB_SEARCH=True
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - RAG_WEB_SEARCH_RESULT_COUNT=5
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=10
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
+
+      # Optional: Enable websocket for streaming
+      - ENABLE_WEBSOCKET_SUPPORT=True
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - searxng
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "${SEARXNG_PORT:-8888}:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    restart: unless-stopped
+
+volumes:
+  open-webui-data:
