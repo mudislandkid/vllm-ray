@@ -6,7 +6,7 @@ services:
     entrypoint: /bin/bash
     command: >
       -c "ray start --head --port=6379
-      --node-ip-address=${HEAD_NODE_IP}
+      --node-ip-address=${HEAD_NODE_IP:-0.0.0.0}
       --dashboard-host=0.0.0.0
       --metrics-export-port=8080
       --block"
@@ -25,14 +25,14 @@ services:
       - ray-dashboards:/grafana-dashboards
       - ./copy-dashboards.sh:/copy-dashboards.sh
     environment:
-      - VLLM_HOST_IP=${HEAD_NODE_IP}
-      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE}
-      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE}
+      - VLLM_HOST_IP=${HEAD_NODE_IP:-0.0.0.0}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-eth0}
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-eth0}
       - NCCL_DEBUG=WARN
       - HF_TOKEN=${HF_TOKEN}
-      - RAY_GRAFANA_HOST=http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}
-      - RAY_PROMETHEUS_HOST=http://${HEAD_NODE_IP}:${PROMETHEUS_PORT:-9090}
-      - RAY_GRAFANA_IFRAME_HOST=http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}
+      - RAY_GRAFANA_HOST=http://${HEAD_NODE_IP:-localhost}:${GRAFANA_PORT:-4000}
+      - RAY_PROMETHEUS_HOST=http://${HEAD_NODE_IP:-localhost}:${PROMETHEUS_PORT:-9090}
+      - RAY_GRAFANA_IFRAME_HOST=http://${HEAD_NODE_IP:-localhost}:${GRAFANA_PORT:-4000}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ray", "status"]
@@ -84,7 +84,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ALLOW_EMBEDDING=true
-      - GF_SERVER_ROOT_URL=http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}
+      - GF_SERVER_ROOT_URL=http://${HEAD_NODE_IP:-localhost}:${GRAFANA_PORT:-4000}
     restart: unless-stopped
     depends_on:
       - prometheus
@@ -97,7 +97,7 @@ services:
     volumes:
       - open-webui-data:/app/backend/data
     environment:
-      - OPENAI_API_BASE_URL=http://${HEAD_NODE_IP}:${VLLM_PORT:-8000}/v1
+      - OPENAI_API_BASE_URL=http://${HEAD_NODE_IP:-localhost}:${VLLM_PORT:-8000}/v1
       - OPENAI_API_KEY=not-needed
       - WEBUI_AUTH=false
     restart: unless-stopped

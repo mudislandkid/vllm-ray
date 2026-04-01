@@ -137,6 +137,50 @@ for m in data.get('data',[]): print(f'  Model: {m[\"id\"]}')
 cmd_logs() { docker exec ray-head tail -n "${1:-100}" /tmp/vllm-serve.log 2>/dev/null || echo "No logs found."; }
 cmd_logs_follow() { docker exec ray-head tail -f /tmp/vllm-serve.log 2>/dev/null || echo "No logs found."; }
 
+cmd_fix_dashboards() {
+    echo -e "${BLUE}Copying Ray Grafana dashboards...${NC}"
+
+    # Find the Ray session directory inside the container
+    local session
+    session=$(docker exec ray-head find /tmp/ray -maxdepth 1 -name "session_*" -type d 2>/dev/null | sort | tail -1)
+
+    if [ -z "$session" ]; then
+        echo -e "${RED}No Ray session found. Is the ray-head container running?${NC}"
+        exit 1
+    fi
+
+    echo -e "${BLUE}Found session: ${session}${NC}"
+
+    # Create temp dir and extract dashboards from ray-head
+    rm -rf /tmp/ray-dashboards
+    mkdir -p /tmp/ray-dashboards
+
+    docker exec ray-head tar cf - "${session}/metrics/grafana/dashboards/" 2>/dev/null | tar xf - -C /tmp/ray-dashboards --strip-components=5 2>/dev/null
+
+    local count
+    count=$(ls /tmp/ray-dashboards/*.json 2>/dev/null | wc -l)
+
+    if [ "$count" -eq 0 ]; then
+        echo -e "${RED}No dashboard JSON files found in Ray session.${NC}"
+        exit 1
+    fi
+
+    echo -e "${BLUE}Found ${count} dashboard(s). Copying to Grafana...${NC}"
+
+    # Copy into Grafana container
+    docker cp /tmp/ray-dashboards/. grafana:/var/lib/grafana/dashboards/
+
+    # Restart Grafana to pick them up
+    docker restart grafana
+    sleep 3
+
+    echo -e "${GREEN}Done! ${count} dashboard(s) loaded into Grafana.${NC}"
+    echo -e "${GREEN}View at: http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}${NC}"
+
+    # Clean up
+    rm -rf /tmp/ray-dashboards
+}
+
 cmd_up() {
     echo -e "${BLUE}Starting cluster and services...${NC}"
     cd "$SCRIPT_DIR"
@@ -148,6 +192,9 @@ cmd_up() {
     echo ""
     echo "Then load a model:"
     echo "  $0 serve <model_name>"
+    echo ""
+    echo "To set up Grafana dashboards:"
+    echo "  $0 fix-dashboards"
 }
 
 cmd_down() {
@@ -184,15 +231,19 @@ cmd_help() {
     echo "  logs [lines]              Show vLLM logs"
     echo "  logs-follow               Follow logs live"
     echo "  models                    List recommended models"
+    echo "  fix-dashboards            Copy Ray dashboards into Grafana"
     echo ""
     echo "Examples:"
-    echo "  $0 serve Qwen/Qwen2.5-7B-Instruct"
-    echo "  $0 serve meta-llama/Llama-3.1-70B-Instruct"
+    echo "  $0 up                                           # Start cluster"
+    echo "  $0 serve Qwen/Qwen2.5-7B-Instruct              # Quick test"
+    echo "  $0 serve meta-llama/Llama-3.1-70B-Instruct      # Full 70B"
+    echo "  $0 fix-dashboards                               # Setup Grafana"
     echo ""
 }
 
 case "${1:-help}" in
     up) cmd_up ;; down) cmd_down ;; serve) shift; cmd_serve "$@" ;;
     stop) cmd_stop ;; status) cmd_status ;; logs) shift; cmd_logs "$@" ;;
-    logs-follow) cmd_logs_follow ;; models) cmd_models ;; *) cmd_help ;;
+    logs-follow) cmd_logs_follow ;; models) cmd_models ;;
+    fix-dashboards) cmd_fix_dashboards ;; *) cmd_help ;;
 esac

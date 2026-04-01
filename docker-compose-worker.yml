@@ -4,7 +4,7 @@ services:
     image: vllm-ray
     container_name: ray-worker
     entrypoint: /bin/bash
-    command: -c "ray start --address=${HEAD_NODE_IP}:6379 --node-ip-address=${WORKER_NODE_IP} --block"
+    command: -c "ray start --address=${HEAD_NODE_IP:-10.50.100.100}:6379 --node-ip-address=${WORKER_NODE_IP:-0.0.0.0} --block"
     network_mode: host
     ipc: host
     shm_size: "10.24g"
@@ -18,9 +18,9 @@ services:
     volumes:
       - /home/vectir/.cache/huggingface:/root/.cache/huggingface
     environment:
-      - VLLM_HOST_IP=${WORKER_NODE_IP}
-      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE}
-      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE}
+      - VLLM_HOST_IP=${WORKER_NODE_IP:-0.0.0.0}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-eth0}
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-eth0}
       - NCCL_DEBUG=WARN
       - HF_TOKEN=${HF_TOKEN}
     restart: unless-stopped
