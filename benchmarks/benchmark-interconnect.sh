@@ -278,7 +278,7 @@ log("Waiting for NCCL process group to initialize (this can take 30-60s)...")
 infos = ray.get([w.get_info.remote() for w in workers])
 
 for w in infos:
-    log(f"  Rank {w['rank']}: {w['node_ip']} ({w['gpu']})")
+    log("  Rank %s: %s (%s)" % (w["rank"], w["node_ip"], w["gpu"]))
 
 log("NCCL initialization complete!")
 
@@ -445,9 +445,7 @@ print_info "Sizes: ${SIZES_MB} MB | Iterations: ${NUM_ITERS} | Warmup: ${NUM_WAR
 echo ""
 
 # Write the benchmark script into the container
-docker exec ray-head bash -c "cat > /tmp/nccl_bench.py << 'PYEOF'
-${NCCL_BENCH_SCRIPT}
-PYEOF"
+echo "$NCCL_BENCH_SCRIPT" | docker exec -i ray-head tee /tmp/nccl_bench.py > /dev/null
 
 # Run the benchmark
 # stderr has PROGRESS: lines (displayed live), stdout has JSON result (captured)
