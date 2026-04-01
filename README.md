@@ -1,21 +1,29 @@
 # vLLM + Ray Distributed Cluster
 
-Docker Compose setup for running vLLM with Ray across multiple nodes for distributed inference.
+Docker Compose setup for running vLLM with Ray across multiple nodes with monitoring and a chat UI.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐     ┌─────────────────────────────────────┐
-│           Node 1 (Head)             │     │          Node 2 (Worker)            │
-│                                     │     │                                     │
-│  ┌─────────────┐  ┌──────────────┐  │     │  ┌─────────────────────────────┐   │
-│  │  Ray Head   │  │ vLLM Server  │  │     │  │        Ray Worker           │   │
-│  │  Port 6379  │  │  Port 8000   │  │     │  │  Connects to Head:6379      │   │
-│  │  Dashboard  │  │              │  │     │  │                             │   │
-│  │  Port 8265  │  │  TP=2, PP=2  │  │     │  │                             │   │
-│  └─────────────┘  └──────────────┘  │     │  └─────────────────────────────┘   │
-│       GPU 0          GPU 1          │     │       GPU 0          GPU 1         │
-└─────────────────────────────────────┘     └─────────────────────────────────────┘
++-----------------------------------------+     +---------------------------+
+|          Head Node (VM1)                |     |     Worker Node (VM2)     |
+|                                         |     |                           |
+|  +-------------+  +-----------------+   |     |  +---------------------+  |
+|  |  Ray Head   |  |   Open WebUI    |   |     |  |    Ray Worker       |  |
+|  |  Port 6379  |  |   Port 3000     |   |     |  |  Joins Head:6379   |  |
+|  |  Dashboard  |  +-----------------+   |     |  +---------------------+  |
+|  |  Port 8265  |                        |     |      GPU 0    GPU 1      |
+|  +-------------+  +-----------------+   |     +---------------------------+
+|      GPU 0        |   Prometheus    |   |
+|      GPU 1        |   Port 9090    |   |
+|                    +-----------------+   |
+|  +-------------+  +-----------------+   |
+|  | vLLM Server |  |    Grafana      |   |
+|  |  Port 8000  |  |   Port 4000    |   |
+|  | (exec in    |  +-----------------+   |
+|  |  ray-head)  |                        |
+|  +-------------+                        |
++-----------------------------------------+
 ```
 
 - **Tensor Parallelism (TP=2)**: Splits model layers across 2 GPUs on each node
@@ -24,238 +32,135 @@ Docker Compose setup for running vLLM with Ray across multiple nodes for distrib
 
 ## Prerequisites
 
-- Docker with NVIDIA Container Toolkit installed on both nodes
-- 2 GPUs per node
+- Docker with NVIDIA Container Toolkit on both nodes
+- 2+ GPUs per node
 - Network connectivity between nodes on port 6379
-- Hugging Face account with access to gated models (e.g., Llama)
+- Hugging Face token for gated models
 
-## Deployment Options
+## Quick Start
 
-### Option A: Pre-built Image (Recommended)
-
-Uses `vllm/vllm-openai:latest` which has Ray + vLLM pre-installed with compatible versions.
-
-**Pros:** Faster deployment, no build step, guaranteed compatible versions
-**Cons:** Less customization
-
-### Option B: Custom Dockerfile
-
-Builds from `rayproject/ray:*-gpu` and installs vLLM on top.
-
-**Pros:** Full control over dependencies, can pin specific versions
-**Cons:** Longer initial build time, potential dependency conflicts
-
----
-
-## Quick Start (Option A - Pre-built)
-
-### Node 1 (Head Node)
+### 1. Configure Environment
 
 ```bash
-# Clone and navigate to node1 directory
-cd node1
-
-# Copy and configure environment variables
 cp .env.example .env
-nano .env  # Set your HF_TOKEN and adjust settings
-
-# Create model cache directory
-mkdir -p models data
-
-# Start Ray head first
-docker compose up -d ray-head
-
-# Wait for Ray head to be ready
-sleep 10
-
-# Start Node 2 worker (see below) before proceeding
-
-# Once Node 2 is connected, start vLLM
-docker compose up -d vllm-server
-
-# Watch logs
-docker compose logs -f vllm-server
+nano .env  # Set HF_TOKEN, IPs, and model settings
 ```
 
-### Node 2 (Worker Node)
+### 2. Start Head Node (VM1)
 
 ```bash
-# Clone and navigate to node2 directory
-cd node2
-
-# Copy and configure environment variables
-cp .env.example .env
-nano .env  # Set RAY_HEAD_IP to Node 1's IP address
-
-# Create model cache directory
-mkdir -p models data
-
-# Start Ray worker
-docker compose up -d
-
-# Check connection to head node
-docker compose logs -f
+./manage.sh up
 ```
 
----
+### 3. Start Worker Node (VM2)
 
-## Quick Start (Option B - Custom Dockerfile)
-
-If you need to customize the environment or pin specific versions.
-
-### Node 1 (Head Node)
+Copy `Dockerfile`, `docker-compose-worker.yml`, and `.env` to the worker node, then:
 
 ```bash
-cd node1
-
-# Configure environment
-cp .env.example .env
-nano .env
-
-# Create directories
-mkdir -p models data
-
-# Build and start (uses docker-compose.build.yml)
-docker compose -f docker-compose.build.yml build
-docker compose -f docker-compose.build.yml up -d ray-head
-
-# Wait for worker nodes to connect, then start vLLM
-docker compose -f docker-compose.build.yml up -d vllm-server
-docker compose -f docker-compose.build.yml logs -f vllm-server
+docker compose -f docker-compose-worker.yml up -d --build
 ```
 
-### Node 2 (Worker Node)
+### 4. Load a Model
 
 ```bash
-cd node2
-
-# Configure environment
-cp .env.example .env
-nano .env  # Set RAY_HEAD_IP
-
-# Create directories
-mkdir -p models data
-
-# Build and start
-docker compose -f docker-compose.build.yml build
-docker compose -f docker-compose.build.yml up -d
-docker compose -f docker-compose.build.yml logs -f
+./manage.sh serve Qwen/Qwen2.5-7B-Instruct
 ```
 
-## Verifying the Cluster
+## Management Script
 
-### Check Ray cluster status (on Node 1)
+The `manage.sh` script provides all cluster operations:
+
+```
+./manage.sh up                        Start cluster + services
+./manage.sh down                      Stop everything
+./manage.sh serve <model> [tp] [pp]   Load a model
+./manage.sh stop                      Unload model (cluster stays running)
+./manage.sh status                    Show cluster status
+./manage.sh logs [lines]              Show vLLM logs
+./manage.sh logs-follow               Follow logs live
+./manage.sh models                    List recommended models
+```
+
+### Examples
 
 ```bash
-docker exec ray-head ray status
+# Small model (single node)
+./manage.sh serve Qwen/Qwen2.5-7B-Instruct
+
+# Large model (multi-node)
+./manage.sh serve meta-llama/Llama-3.1-70B-Instruct
+
+# FP8 quantized (recommended for 70B)
+./manage.sh serve neuralmagic/Meta-Llama-3.1-70B-Instruct-FP8
 ```
 
-Expected output:
-```
-======== Autoscaler status ========
-...
-Resources:
-  - CPU: 0.0/X used
-  - GPU: 0.0/4.0 used  # Should show 4.0 GPUs
-  - ...
-```
-
-**Important**: Wait until you see `4.0 GPUs` before starting vLLM. If you only see 2 GPUs, Node 2 hasn't connected yet.
-
-### Access Ray Dashboard
-
-Open `http://<node1-ip>:8265` in your browser
-
-### Test vLLM API
-
-```bash
-curl http://<node1-ip>:8000/v1/models
-
-curl http://<node1-ip>:8000/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "meta-llama/Llama-3.1-70B-Instruct",
-    "prompt": "Hello, how are you?",
-    "max_tokens": 50
-  }'
-```
-
-## Configuration
-
-### Node 1 Environment Variables
+## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HF_TOKEN` | (required) | Hugging Face API token |
-| `MODEL_NAME` | `meta-llama/Llama-3.1-70B-Instruct` | Model to serve |
-| `MODEL_CACHE_DIR` | `./models` | Local model cache path |
-| `VLLM_PORT` | `8000` | vLLM API port |
-| `MAX_MODEL_LEN` | `4096` | Maximum sequence length |
+| `HEAD_NODE_IP` | `10.50.100.100` | Head node IP address |
+| `WORKER_NODE_IP` | `10.50.100.101` | Worker node IP address |
+| `NETWORK_INTERFACE` | `ens33` | Network interface for NCCL/GLOO |
+| `MODEL_NAME` | `Qwen/Qwen2.5-7B-Instruct` | Default model to serve |
 | `TENSOR_PARALLEL_SIZE` | `2` | GPUs per node for tensor parallelism |
-| `PIPELINE_PARALLEL_SIZE` | `2` | Number of nodes for pipeline parallelism |
-| `VLLM_STARTUP_DELAY` | `60` | Seconds to wait for workers before starting vLLM |
+| `PIPELINE_PARALLEL_SIZE` | `2` | Nodes for pipeline parallelism |
+| `MAX_MODEL_LEN` | `4096` | Maximum sequence length |
+| `GPU_MEMORY_UTILIZATION` | `0.9` | GPU memory fraction to use |
+| `HF_TOKEN` | | Hugging Face API token |
+| `VLLM_PORT` | `8000` | vLLM API port |
+| `WEBUI_PORT` | `3000` | Open WebUI port |
+| `PROMETHEUS_PORT` | `9090` | Prometheus port |
+| `GRAFANA_PORT` | `4000` | Grafana port |
 
-### Node 2 Environment Variables
+## Services
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HF_TOKEN` | (required) | Hugging Face API token |
-| `RAY_HEAD_IP` | `10.15.105.105` | IP address of Node 1 (Ray head) |
-| `MODEL_CACHE_DIR` | `./models` | Local model cache path |
+| Service | URL | Description |
+|---------|-----|-------------|
+| vLLM API | `http://<head-ip>:8000/v1` | OpenAI-compatible API |
+| Open WebUI | `http://<head-ip>:3000` | Chat interface |
+| Ray Dashboard | `http://<head-ip>:8265` | Ray cluster monitoring |
+| Grafana | `http://<head-ip>:4000` | Metrics dashboards (admin/vllm-admin) |
+| Prometheus | `http://<head-ip>:9090` | Metrics storage |
+
+## Project Structure
+
+```
+.
+├── Dockerfile                    # vLLM + Ray image
+├── docker-compose-head.yml       # Head node services
+├── docker-compose-worker.yml     # Worker node service
+├── manage.sh                     # Cluster management script
+├── copy-dashboards.sh            # Ray Grafana dashboard provisioner
+├── .env.example                  # Environment variable template
+├── prometheus/
+│   └── prometheus.yml            # Prometheus scrape config
+├── grafana/
+│   └── provisioning/
+│       ├── datasources/
+│       │   └── datasource.yml    # Prometheus datasource
+│       └── dashboards/
+│           └── dashboard-provider.yml  # Dashboard auto-discovery
+└── benchmarks/                   # GPU/network/disk benchmark scripts
+```
 
 ## Troubleshooting
 
-### "Tensor parallel size exceeds available GPUs"
+### Worker not connecting
+1. Check connectivity: `ping <head-ip>` from worker
+2. Verify port 6379 is open: `nc -zv <head-ip> 6379`
+3. Check `NETWORK_INTERFACE` matches your setup (`ip a` to find it)
 
-vLLM started before all workers connected. Solution:
+### Model won't load
+- Check logs: `./manage.sh logs`
+- Verify enough GPUs: `./manage.sh status`
+- Try a smaller model first to test the cluster
+
+### Version mismatch
+Both nodes must use the same Docker image. Rebuild on both:
 ```bash
-# On Node 1
-docker compose stop vllm-server
-docker exec ray-head ray status  # Wait for 4 GPUs
-docker compose up -d vllm-server
+docker compose -f docker-compose-head.yml build
+docker compose -f docker-compose-worker.yml build
 ```
-
-### Version mismatch errors
-
-Both nodes must use the same Docker image (`vllm/vllm-openai:latest`). Pull the latest on both:
-```bash
-docker pull vllm/vllm-openai:latest
-```
-
-### "No module named 'vllm'" on workers
-
-Worker node is using wrong image. Ensure Node 2 uses `vllm/vllm-openai:latest`, not `rayproject/ray:latest-gpu`.
-
-### Worker not connecting to head
-
-1. Check network connectivity: `ping <node1-ip>` from Node 2
-2. Verify port 6379 is open: `nc -zv <node1-ip> 6379`
-3. Check firewall rules on both nodes
-4. Verify `RAY_HEAD_IP` in Node 2's `.env` file
-
-### Permission errors with /tmp/ray
-
-This setup intentionally does not mount `/tmp/ray` to avoid permission issues. Ray session data won't persist between restarts.
-
-## Stopping the Cluster
-
-### Node 1
-```bash
-docker compose down
-```
-
-### Node 2
-```bash
-docker compose down
-```
-
-## Scaling
-
-To add more worker nodes:
-1. Copy `node2/` directory to the new node
-2. Configure `.env` with the correct `RAY_HEAD_IP`
-3. Update `PIPELINE_PARALLEL_SIZE` on Node 1 accordingly
-4. Restart the cluster
 
 ## License
 

@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'ray-head'
+    static_configs:
+      - targets: ['10.50.100.100:8080']
+        labels:
+          node: 'head'
+
+  - job_name: 'ray-worker'
+    static_configs:
+      - targets: ['10.50.100.101:8080']
+        labels:
+          node: 'worker'

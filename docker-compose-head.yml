@@ -1,0 +1,109 @@
+services:
+  ray-head:
+    build: .
+    image: vllm-ray
+    container_name: ray-head
+    entrypoint: /bin/bash
+    command: >
+      -c "ray start --head --port=6379
+      --node-ip-address=${HEAD_NODE_IP}
+      --dashboard-host=0.0.0.0
+      --metrics-export-port=8080
+      --block"
+    network_mode: host
+    ipc: host
+    shm_size: "10.24g"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - /home/vectir/.cache/huggingface:/root/.cache/huggingface
+      - ray-dashboards:/grafana-dashboards
+      - ./copy-dashboards.sh:/copy-dashboards.sh
+    environment:
+      - VLLM_HOST_IP=${HEAD_NODE_IP}
+      - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE}
+      - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE}
+      - NCCL_DEBUG=WARN
+      - HF_TOKEN=${HF_TOKEN}
+      - RAY_GRAFANA_HOST=http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}
+      - RAY_PROMETHEUS_HOST=http://${HEAD_NODE_IP}:${PROMETHEUS_PORT:-9090}
+      - RAY_GRAFANA_IFRAME_HOST=http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ray", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  dashboard-copier:
+    image: vllm-ray
+    container_name: dashboard-copier
+    entrypoint: /bin/bash
+    command: /copy-dashboards.sh
+    network_mode: host
+    volumes:
+      - ray-dashboards:/grafana-dashboards
+      - ./copy-dashboards.sh:/copy-dashboards.sh
+    depends_on:
+      ray-head:
+        condition: service_healthy
+    restart: "no"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "${GRAFANA_PORT:-4000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ray-dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=vllm-admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SERVER_ROOT_URL=http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "${WEBUI_PORT:-3000}:8080"
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      - OPENAI_API_BASE_URL=http://${HEAD_NODE_IP}:${VLLM_PORT:-8000}/v1
+      - OPENAI_API_KEY=not-needed
+      - WEBUI_AUTH=false
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  open-webui-data:
+  ray-dashboards:
