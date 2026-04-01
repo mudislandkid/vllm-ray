@@ -54,6 +54,9 @@ cmd_serve() {
     echo -e "${BLUE}Starting model: ${model}${NC}"
     echo -e "${BLUE}  TP=${tp} PP=${pp} MaxLen=${max_len} GPUUtil=${gpu_util}${NC}"
 
+    # Clear old log
+    docker exec ray-head bash -c "> /tmp/vllm-serve.log" 2>/dev/null
+
     docker exec -d ray-head bash -c \
         "HF_TOKEN=${HF_TOKEN} vllm serve '${model}' \
             --tensor-parallel-size ${tp} \
@@ -65,26 +68,89 @@ cmd_serve() {
             --port ${VLLM_PORT:-8000} \
             2>&1 | tee /tmp/vllm-serve.log"
 
-    echo -e "${BLUE}Loading in background. Checking...${NC}"
+    echo ""
+    echo -e "${BLUE}Waiting for vLLM to start (tailing logs)...${NC}"
+    echo -e "${BLUE}Press Ctrl+C to stop watching (server continues in background)${NC}"
+    echo ""
 
+    # Give vLLM a moment to create the log file
+    sleep 2
+
+    # Tail the log in background, colorizing key lines
+    docker exec ray-head tail -f /tmp/vllm-serve.log 2>/dev/null | while IFS= read -r line; do
+        # Detect errors and fatal messages
+        if echo "$line" | grep -qiE "(error|exception|traceback|failed|fatal|CUDA out of memory|OOM)"; then
+            echo -e "  ${RED}✗ ${line}${NC}"
+        # Detect download/fetch progress
+        elif echo "$line" | grep -qiE "(downloading|fetching|download|\.safetensors|\.bin|%\|)"; then
+            echo -e "  ${CYAN}↓ ${line}${NC}"
+        # Detect model loading stages
+        elif echo "$line" | grep -qiE "(loading|loaded|initializ|warming up|profiling|creating|starting|memory|weight)"; then
+            echo -e "  ${YELLOW}⟳ ${line}${NC}"
+        # Detect ready / serving state
+        elif echo "$line" | grep -qiE "(started server|uvicorn running|application startup complete|serving)"; then
+            echo -e "  ${GREEN}✓ ${line}${NC}"
+        # Detect warnings
+        elif echo "$line" | grep -qiE "(warning|warn)"; then
+            echo -e "  ${YELLOW}⚠ ${line}${NC}"
+        # Detect Ray cluster info
+        elif echo "$line" | grep -qiE "(ray|worker|node|gpu|placement)"; then
+            echo -e "  ${BLUE}◆ ${line}${NC}"
+        else
+            echo "  $line"
+        fi
+    done &
+    local tail_pid=$!
+
+    # Poll health endpoint in parallel
     local attempts=0
-    while [ $attempts -lt 120 ]; do
+    local max_attempts=300
+    while [ $attempts -lt $max_attempts ]; do
         if curl -s "http://localhost:${VLLM_PORT:-8000}/health" &>/dev/null; then
+            # Kill the tail process
+            kill $tail_pid 2>/dev/null
+            wait $tail_pid 2>/dev/null
+
             echo ""
-            echo -e "${GREEN}Model is ready!${NC}"
+            echo -e "${GREEN}════════════════════════════════════════${NC}"
+            echo -e "${GREEN}  Model is ready! (took ~${attempts}s)${NC}"
+            echo -e "${GREEN}════════════════════════════════════════${NC}"
+            echo ""
             echo -e "  API:           http://${HEAD_NODE_IP}:${VLLM_PORT:-8000}/v1"
             echo -e "  Chat UI:       http://${HEAD_NODE_IP}:${WEBUI_PORT:-3000}"
             echo -e "  Ray Dashboard: http://${HEAD_NODE_IP}:8265"
             echo -e "  Grafana:       http://${HEAD_NODE_IP}:${GRAFANA_PORT:-4000}"
             echo -e "  Model:         ${model}"
+            echo ""
             return 0
         fi
+
+        # Check if vLLM process died
+        if ! docker exec ray-head pgrep -f "vllm serve" &>/dev/null; then
+            kill $tail_pid 2>/dev/null
+            wait $tail_pid 2>/dev/null
+
+            echo ""
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo -e "${RED}  vLLM process died during startup!${NC}"
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo ""
+            echo -e "${RED}Last 20 lines of log:${NC}"
+            docker exec ray-head tail -n 20 /tmp/vllm-serve.log 2>/dev/null
+            echo ""
+            return 1
+        fi
+
         attempts=$((attempts + 1))
-        [ $((attempts % 10)) -eq 0 ] && echo -e "${BLUE}Still loading... (${attempts}s)${NC}"
         sleep 1
     done
 
-    echo -e "${YELLOW}Server hasn't responded after 120s. Check: $0 logs${NC}"
+    kill $tail_pid 2>/dev/null
+    wait $tail_pid 2>/dev/null
+
+    echo ""
+    echo -e "${YELLOW}Server hasn't responded after ${max_attempts}s.${NC}"
+    echo -e "${YELLOW}It may still be loading. Check: $0 logs-follow${NC}"
 }
 
 cmd_stop() {
