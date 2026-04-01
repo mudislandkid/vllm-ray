@@ -146,15 +146,22 @@ import json
 import sys
 import os
 
+def log(msg):
+    """Print progress to stderr so stdout stays clean for JSON result."""
+    print(f"PROGRESS: {msg}", file=sys.stderr, flush=True)
+
 num_warmup = int(os.environ.get("NUM_WARMUP", "3"))
 num_iters = int(os.environ.get("NUM_ITERS", "10"))
 sizes_mb_str = os.environ.get("SIZES_MB", "1,16,64,256,512,1024")
 sizes_mb = [int(s) for s in sizes_mb_str.split(",")]
 
+log("Connecting to Ray cluster...")
 ray.init(address="auto")
 
 nodes = [n for n in ray.nodes() if n["Alive"]]
 total_gpus = int(sum(n["Resources"].get("GPU", 0) for n in nodes))
+
+log(f"Found {len(nodes)} nodes with {total_gpus} total GPUs")
 
 if total_gpus < 2:
     print(json.dumps({"error": f"Need at least 2 GPUs across nodes, found {total_gpus}"}))
@@ -260,14 +267,20 @@ class NCCLWorker:
 master_addr = sys.argv[1] if len(sys.argv) > 1 else "localhost"
 master_port = 29500
 
-# Create workers across all GPUs
+log(f"Creating {total_gpus} NCCL workers (master={master_addr}:{master_port})...")
 workers = []
 for i in range(total_gpus):
+    log(f"  Spawning worker rank {i}/{total_gpus-1}...")
     w = NCCLWorker.remote(i, total_gpus, master_addr, master_port)
     workers.append(w)
 
-# Get worker placement info
+log("Waiting for NCCL process group to initialize (this can take 30-60s)...")
 infos = ray.get([w.get_info.remote() for w in workers])
+
+for w in infos:
+    log(f"  Rank {w['rank']}: {w['node_ip']} ({w['gpu']})")
+
+log("NCCL initialization complete!")
 
 results = {
     "num_gpus": total_gpus,
@@ -288,7 +301,9 @@ for key in ["NCCL_SOCKET_IFNAME", "NCCL_IB_DISABLE", "NCCL_NET_GDR_LEVEL",
         results["nccl_env"][key] = val
 
 # AllReduce benchmark
+log(f"Starting AllReduce benchmark ({len(sizes_mb)} sizes)...")
 for size_mb in sizes_mb:
+    log(f"  AllReduce {size_mb} MB ({num_warmup} warmup + {num_iters} iters)...")
     size_bytes = size_mb * 1024 * 1024
     times = ray.get([w.bench_allreduce.remote(size_bytes, num_warmup, num_iters) for w in workers])
     avg_time = max(times)  # allreduce completes when slowest finishes
@@ -298,9 +313,12 @@ for size_mb in sizes_mb:
         "time_ms": round(avg_time * 1000, 3),
         "busbw_gbps": round(bw, 2)
     })
+    log(f"  AllReduce {size_mb} MB: {avg_time*1000:.1f}ms / {bw:.2f} GB/s bus BW")
 
 # AllGather benchmark
+log(f"Starting AllGather benchmark ({len(sizes_mb)} sizes)...")
 for size_mb in sizes_mb:
+    log(f"  AllGather {size_mb} MB ({num_warmup} warmup + {num_iters} iters)...")
     size_bytes = size_mb * 1024 * 1024
     times = ray.get([w.bench_allgather.remote(size_bytes, num_warmup, num_iters) for w in workers])
     avg_time = max(times)
@@ -310,10 +328,13 @@ for size_mb in sizes_mb:
         "time_ms": round(avg_time * 1000, 3),
         "busbw_gbps": round(bw, 2)
     })
+    log(f"  AllGather {size_mb} MB: {avg_time*1000:.1f}ms / {bw:.2f} GB/s bus BW")
 
 # P2P benchmark (rank 0 -> rank on different node if possible)
 dest_rank = total_gpus - 1  # last GPU, likely on worker node
+log(f"Starting P2P benchmark (rank 0 -> rank {dest_rank}, {len(sizes_mb)} sizes)...")
 for size_mb in sizes_mb:
+    log(f"  P2P {size_mb} MB ({num_warmup} warmup + {num_iters} iters)...")
     size_bytes = size_mb * 1024 * 1024
     send_fut = workers[0].bench_p2p_send.remote(size_bytes, dest_rank, num_warmup, num_iters)
     recv_fut = workers[dest_rank].bench_p2p_recv.remote(size_bytes, 0, num_warmup, num_iters)
@@ -327,9 +348,12 @@ for size_mb in sizes_mb:
         "src": infos[0]["node_ip"],
         "dst": infos[dest_rank]["node_ip"]
     })
+    log(f"  P2P {size_mb} MB: {transfer_time*1000:.1f}ms / {bw:.2f} GB/s")
 
 # Cleanup
+log("Cleaning up NCCL process groups...")
 ray.get([w.cleanup.remote() for w in workers])
+log("Done!")
 
 print(json.dumps(results))
 '
@@ -426,8 +450,49 @@ ${NCCL_BENCH_SCRIPT}
 PYEOF"
 
 # Run the benchmark
-NCCL_RESULT=$(docker exec -e NUM_WARMUP="$NUM_WARMUP" -e NUM_ITERS="$NUM_ITERS" -e SIZES_MB="$SIZES_MB" \
-    ray-head python3 /tmp/nccl_bench.py "$HEAD_IP" 2>/dev/null)
+# stderr has PROGRESS: lines (displayed live), stdout has JSON result (captured)
+NCCL_TMPOUT=$(mktemp)
+NCCL_TMPERR=$(mktemp)
+
+docker exec -e NUM_WARMUP="$NUM_WARMUP" -e NUM_ITERS="$NUM_ITERS" -e SIZES_MB="$SIZES_MB" \
+    ray-head python3 /tmp/nccl_bench.py "$HEAD_IP" \
+    >"$NCCL_TMPOUT" 2>"$NCCL_TMPERR" &
+NCCL_PID=$!
+
+# Tail stderr for progress, colorizing output
+tail -f "$NCCL_TMPERR" 2>/dev/null | while IFS= read -r line; do
+    # Only show our PROGRESS lines, skip Ray/torch noise
+    if [[ "$line" == PROGRESS:* ]]; then
+        msg="${line#PROGRESS: }"
+        if echo "$msg" | grep -qiE "(error|failed|exception)"; then
+            echo -e "  ${RED}✗ ${msg}${NC}"
+        elif echo "$msg" | grep -qiE "(complete|done|ready)"; then
+            echo -e "  ${GREEN}✓ ${msg}${NC}"
+        elif echo "$msg" | grep -qiE "(GB/s|ms)"; then
+            echo -e "  ${GREEN}  ${msg}${NC}"
+        elif echo "$msg" | grep -qiE "(starting|connecting|creating|spawning|waiting|initializ)"; then
+            echo -e "  ${YELLOW}⟳ ${msg}${NC}"
+        elif echo "$msg" | grep -qiE "(found|rank)"; then
+            echo -e "  ${CYAN}◆ ${msg}${NC}"
+        else
+            echo -e "  ${BLUE}  ${msg}${NC}"
+        fi
+    fi
+done &
+TAIL_PID=$!
+
+# Wait for the benchmark to finish
+wait $NCCL_PID 2>/dev/null
+
+# Give tail a moment to flush, then kill it
+sleep 1
+kill $TAIL_PID 2>/dev/null
+wait $TAIL_PID 2>/dev/null
+
+NCCL_RESULT=$(cat "$NCCL_TMPOUT")
+rm -f "$NCCL_TMPOUT" "$NCCL_TMPERR"
+
+echo ""
 
 # Check for errors
 nccl_error=$(echo "$NCCL_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null)
