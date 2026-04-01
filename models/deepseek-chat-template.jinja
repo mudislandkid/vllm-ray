@@ -1,0 +1,7 @@
+{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% set ns = namespace(is_first=true, is_tool=false, is_output_first=true, system_prompt='') %}{%- for message in messages %}{%- if message['role'] == 'system' %}{%- set ns.system_prompt = message['content'] %}{%- endif %}{%- endfor %}{{bos_token}}{% if ns.system_prompt != '' %}{{ns.system_prompt}}
+
+{% endif %}{%- for message in messages %}{%- if message['role'] == 'user' %}{%- if ns.is_first %}{%- set ns.is_first = false %}{% endif %}User: {{message['content']}}
+
+{% elif message['role'] == 'assistant' %}Assistant: {{message['content']}}
+
+{% endif %}{%- endfor %}{% if add_generation_prompt %}Assistant: {% endif %}

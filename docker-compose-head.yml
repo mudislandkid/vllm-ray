@@ -25,6 +25,7 @@ services:
       - /home/vectir/.cache/huggingface:/root/.cache/huggingface
       - ray-dashboards:/grafana-dashboards
       - ./copy-dashboards.sh:/copy-dashboards.sh
+      - ./models:/models:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - VLLM_HOST_IP=${HEAD_NODE_IP:-0.0.0.0}
