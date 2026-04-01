@@ -108,14 +108,14 @@ services:
   dashboard:
     build: ./dashboard
     container_name: vllm-dashboard
-    ports:
-      - "${DASHBOARD_PORT:-8501}:8501"
+    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./models:/models:ro
     environment:
-      - HEAD_NODE_IP=${HEAD_NODE_IP:-localhost}
+      - HEAD_NODE_IP=${HEAD_NODE_IP:-127.0.0.1}
       - VLLM_PORT=${VLLM_PORT:-8000}
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-8501}
       - MODELS_DIR=/models
       - HF_TOKEN=${HF_TOKEN}
     restart: unless-stopped
