@@ -7,7 +7,7 @@
 #  Produces a single summary you can compare side-by-side.
 #===============================================================================
 
-set -e
+# NOTE: no set -e here — background processes and pipes need to fail gracefully
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
