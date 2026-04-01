@@ -13,6 +13,7 @@ services:
     network_mode: host
     ipc: host
     shm_size: "10.24g"
+    runtime: nvidia
     deploy:
       resources:
         reservations:
@@ -25,6 +26,7 @@ services:
       - ray-dashboards:/grafana-dashboards
       - ./copy-dashboards.sh:/copy-dashboards.sh
     environment:
+      - NVIDIA_VISIBLE_DEVICES=all
       - VLLM_HOST_IP=${HEAD_NODE_IP:-0.0.0.0}
       - NCCL_SOCKET_IFNAME=${NETWORK_INTERFACE:-eth0}
       - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-eth0}
