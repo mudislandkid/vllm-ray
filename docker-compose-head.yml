@@ -105,6 +105,23 @@ services:
       - WEBUI_AUTH=false
     restart: unless-stopped
 
+  dashboard:
+    build: ./dashboard
+    container_name: vllm-dashboard
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./models:/models:ro
+    environment:
+      - HEAD_NODE_IP=${HEAD_NODE_IP:-localhost}
+      - VLLM_PORT=${VLLM_PORT:-8000}
+      - MODELS_DIR=/models
+      - HF_TOKEN=${HF_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - ray-head
+
 volumes:
   prometheus-data:
   grafana-data:

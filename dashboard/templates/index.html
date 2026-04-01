@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>vLLM Cluster Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>vLLM Cluster</h1>
+            <span class="header-subtitle">Dashboard</span>
+        </div>
+        <div class="header-right">
+            <span id="cluster-badge" class="badge badge-offline">Offline</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- Status Cards -->
+        <section class="cards">
+            <div class="card" id="card-ray">
+                <div class="card-header">
+                    <span class="card-icon">&#9678;</span>
+                    <span>Ray Cluster</span>
+                </div>
+                <div class="card-body">
+                    <div class="stat">
+                        <span class="stat-value" id="ray-nodes">-</span>
+                        <span class="stat-label">Nodes</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="ray-gpus">-</span>
+                        <span class="stat-label">GPUs</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="ray-cpus">-</span>
+                        <span class="stat-label">CPUs</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="card-model">
+                <div class="card-header">
+                    <span class="card-icon">&#9733;</span>
+                    <span>Current Model</span>
+                </div>
+                <div class="card-body">
+                    <div id="model-status" class="model-status">
+                        <span id="model-name" class="model-name">No model loaded</span>
+                        <button id="btn-stop" class="btn btn-danger" onclick="stopModel()" style="display:none">Stop</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- GPU Cards -->
+        <section class="cards" id="gpu-cards"></section>
+
+        <!-- Model Profiles -->
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Model Profiles</h2>
+            </div>
+            <div class="panel-body" id="model-profiles">
+                <p class="muted">Loading profiles...</p>
+            </div>
+        </section>
+
+        <!-- Live Logs -->
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Live Logs</h2>
+                <div class="panel-actions">
+                    <button class="btn btn-small" onclick="clearLogs()">Clear</button>
+                    <label class="toggle">
+                        <input type="checkbox" id="autoscroll" checked>
+                        <span>Auto-scroll</span>
+                    </label>
+                </div>
+            </div>
+            <div class="log-container" id="log-container">
+                <pre id="log-output"></pre>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
