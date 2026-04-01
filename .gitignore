@@ -4,10 +4,10 @@
 !.env.example
 !.env.single-node.example
 
-# Model cache
-models/
+# Model weights (not profiles)
 *.bin
 *.safetensors
+!models/*.conf
 
 # Python
 __pycache__/

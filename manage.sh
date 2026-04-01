@@ -3,6 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
+MODELS_DIR="${SCRIPT_DIR}/models"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -29,14 +30,51 @@ print_header() {
 }
 
 cmd_serve() {
-    local model="${1:-$MODEL_NAME}"
-    local tp="${2:-$TENSOR_PARALLEL_SIZE}"
-    local pp="${3:-$PIPELINE_PARALLEL_SIZE}"
-    local max_len="${4:-$MAX_MODEL_LEN}"
-    local gpu_util="${5:-$GPU_MEMORY_UTILIZATION}"
+    local input="${1:-$MODEL_NAME}"
+    local extra_args=""
+
+    # Check if input matches a model profile
+    local profile=""
+    if [[ -n "$input" && -f "${MODELS_DIR}/${input}.conf" ]]; then
+        profile="${MODELS_DIR}/${input}.conf"
+    elif [[ -n "$input" && -f "${MODELS_DIR}/${input}" ]]; then
+        profile="${MODELS_DIR}/${input}"
+    fi
+
+    if [[ -n "$profile" ]]; then
+        echo -e "${CYAN}Loading profile: ${profile##*/}${NC}"
+
+        # Read profile values (use subshell-safe parsing to avoid clobbering env)
+        local MODEL_ID="" TENSOR_PARALLEL="" PIPELINE_PARALLEL="" PROF_MAX_LEN="" GPU_MEM_UTIL="" EXTRA_ARGS=""
+        eval "$(grep -E '^[A-Z_]+=' "$profile" | sed 's/MAX_MODEL_LEN=/PROF_MAX_LEN=/')"
+
+        local model="${MODEL_ID}"
+        local tp="${TENSOR_PARALLEL:-$TENSOR_PARALLEL_SIZE}"
+        local pp="${PIPELINE_PARALLEL:-$PIPELINE_PARALLEL_SIZE}"
+        local max_len="${PROF_MAX_LEN:-${MAX_MODEL_LEN:-4096}}"
+        local gpu_util="${GPU_MEM_UTIL:-${GPU_MEMORY_UTILIZATION:-0.9}}"
+        extra_args="${EXTRA_ARGS:-}"
+
+        # Show profile description
+        grep "^#" "$profile" | head -2 | while read -r line; do
+            echo -e "  ${BLUE}${line}${NC}"
+        done
+    else
+        # Direct model ID passed (original behavior)
+        local model="$input"
+        local tp="${2:-$TENSOR_PARALLEL_SIZE}"
+        local pp="${3:-$PIPELINE_PARALLEL_SIZE}"
+        local max_len="${4:-$MAX_MODEL_LEN}"
+        local gpu_util="${5:-$GPU_MEMORY_UTILIZATION}"
+    fi
 
     if [ -z "$model" ]; then
-        echo -e "${RED}No model specified. Usage: $0 serve <model_name>${NC}"
+        echo -e "${RED}No model specified.${NC}"
+        echo ""
+        echo "Usage: $0 serve <profile_name|model_id> [tp] [pp] [max_len] [gpu_util]"
+        echo ""
+        echo "Profiles available:"
+        cmd_models
         exit 1
     fi
 
@@ -53,6 +91,9 @@ cmd_serve() {
 
     echo -e "${BLUE}Starting model: ${model}${NC}"
     echo -e "${BLUE}  TP=${tp} PP=${pp} MaxLen=${max_len} GPUUtil=${gpu_util}${NC}"
+    if [[ -n "$extra_args" ]]; then
+        echo -e "${BLUE}  Extra args: ${extra_args}${NC}"
+    fi
 
     # Clear old log
     docker exec ray-head bash -c "> /tmp/vllm-serve.log" 2>/dev/null
@@ -66,6 +107,7 @@ cmd_serve() {
             --distributed-executor-backend ray \
             --host 0.0.0.0 \
             --port ${VLLM_PORT:-8000} \
+            ${extra_args} \
             2>&1 | tee /tmp/vllm-serve.log"
 
     echo ""
@@ -273,17 +315,26 @@ cmd_down() {
 
 cmd_models() {
     echo ""
-    echo -e "${CYAN}Recommended models (4x L40 = 192GB VRAM):${NC}"
+    echo -e "${CYAN}Available model profiles (4x L40 = 192GB VRAM):${NC}"
     echo ""
-    echo "  Small:   Qwen/Qwen2.5-7B-Instruct"
-    echo "           mistralai/Mistral-7B-Instruct-v0.3"
+    printf "  ${BOLD}%-25s  %s${NC}\n" "PROFILE" "DESCRIPTION"
+    echo "  ─────────────────────────────────────────────────────────────────"
+
+    for conf in "${MODELS_DIR}"/*.conf; do
+        [[ -f "$conf" ]] || continue
+        local name
+        name=$(basename "$conf" .conf)
+        local desc
+        desc=$(grep "^#" "$conf" | head -1 | sed 's/^# *//')
+        printf "  %-25s  %s\n" "$name" "$desc"
+    done
+
     echo ""
-    echo "  Medium:  Qwen/Qwen2.5-32B-Instruct"
-    echo "           deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
-    echo "           mistralai/Mixtral-8x7B-Instruct-v0.1"
+    echo "Usage:"
+    echo "  $0 serve <profile>              # Use a profile"
+    echo "  $0 serve <huggingface/model-id>  # Or pass model ID directly"
     echo ""
-    echo "  Large:   meta-llama/Llama-3.1-70B-Instruct"
-    echo "           neuralmagic/Meta-Llama-3.1-70B-Instruct-FP8 (recommended)"
+    echo "To add a new model, create a .conf file in models/"
     echo ""
 }
 
@@ -291,21 +342,24 @@ cmd_help() {
     print_header
     echo "Usage: $0 <command> [options]"
     echo ""
-    echo "  up                        Start cluster + services"
-    echo "  down                      Stop everything"
-    echo "  serve <model> [tp] [pp]   Load a model"
-    echo "  stop                      Unload model"
-    echo "  status                    Show cluster status"
-    echo "  logs [lines]              Show vLLM logs"
-    echo "  logs-follow               Follow logs live"
-    echo "  models                    List recommended models"
-    echo "  fix-dashboards            Copy Ray dashboards into Grafana"
+    echo "  up                         Start cluster + services"
+    echo "  down                       Stop everything"
+    echo "  serve <profile|model_id>   Load a model (profile or HuggingFace ID)"
+    echo "  stop                       Unload model"
+    echo "  status                     Show cluster status"
+    echo "  models                     List available model profiles"
+    echo "  logs [lines]               Show vLLM logs"
+    echo "  logs-follow                Follow logs live"
+    echo "  fix-dashboards             Copy Ray dashboards into Grafana"
     echo ""
     echo "Examples:"
-    echo "  $0 up                                           # Start cluster"
-    echo "  $0 serve Qwen/Qwen2.5-7B-Instruct              # Quick test"
-    echo "  $0 serve meta-llama/Llama-3.1-70B-Instruct      # Full 70B"
-    echo "  $0 fix-dashboards                               # Setup Grafana"
+    echo "  $0 up                                            # Start cluster"
+    echo "  $0 serve deepseek-r1-70b                         # Use a profile"
+    echo "  $0 serve deepseek-r1-32b                         # Smaller, faster"
+    echo "  $0 serve qwen-7b                                 # Quick test"
+    echo "  $0 serve Qwen/Qwen2.5-7B-Instruct 2 1           # Direct model ID"
+    echo "  $0 models                                        # List all profiles"
+    echo "  $0 fix-dashboards                                # Setup Grafana"
     echo ""
 }
 
