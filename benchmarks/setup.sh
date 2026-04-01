@@ -150,10 +150,11 @@ echo ""
 echo "Setting up Python virtual environment..."
 echo ""
 
-# Check for python3-venv
-if ! python3 -m venv --help &> /dev/null; then
+# Ensure python3-venv is installed (ensurepip may not be available)
+if ! python3 -c "import ensurepip" &> /dev/null; then
     print_installing "python3-venv"
-    $SUDO $PKG_INSTALL python3-venv
+    PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    $SUDO $PKG_INSTALL "python3.${PYTHON_VERSION#3.}-venv" 2>/dev/null || $SUDO $PKG_INSTALL python3-venv
 fi
 
 # Create virtual environment
