@@ -155,8 +155,10 @@ cmd_fix_dashboards() {
     rm -rf /tmp/ray-dashboards
     mkdir -p /tmp/ray-dashboards
 
-    docker exec ray-head tar cf - "${session}/metrics/grafana/dashboards/" 2>/dev/null | tar xf - -C /tmp/ray-dashboards --strip-components=5 2>/dev/null
-
+    for f in $(docker exec ray-head ls "${session}/metrics/grafana/dashboards/"); do
+        docker cp "ray-head:${session}/metrics/grafana/dashboards/${f}" /tmp/ray-dashboards/
+    done
+    
     local count
     count=$(ls /tmp/ray-dashboards/*.json 2>/dev/null | wc -l)
 
