@@ -32,6 +32,7 @@ services:
       - GLOO_SOCKET_IFNAME=${NETWORK_INTERFACE:-eth0}
       - NCCL_DEBUG=WARN
       - HF_TOKEN=${HF_TOKEN}
+      - HF_HUB_ENABLE_HF_TRANSFER=1
       - RAY_GRAFANA_HOST=http://${HEAD_NODE_IP:-localhost}:${GRAFANA_PORT:-4000}
       - RAY_PROMETHEUS_HOST=http://${HEAD_NODE_IP:-localhost}:${PROMETHEUS_PORT:-9090}
       - RAY_GRAFANA_IFRAME_HOST=http://${HEAD_NODE_IP:-localhost}:${GRAFANA_PORT:-4000}
