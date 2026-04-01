@@ -455,13 +455,14 @@ NCCL_TMPOUT=$(mktemp)
 NCCL_TMPERR=$(mktemp)
 
 docker exec -e NUM_WARMUP="$NUM_WARMUP" -e NUM_ITERS="$NUM_ITERS" -e SIZES_MB="$SIZES_MB" \
+    -e NCCL_DEBUG=INFO -e NCCL_DEBUG_SUBSYS=INIT,NET \
     ray-head python3 /tmp/nccl_bench.py "$HEAD_IP" \
     >"$NCCL_TMPOUT" 2>"$NCCL_TMPERR" &
 NCCL_PID=$!
 
 # Tail stderr for progress, colorizing output
 tail -f "$NCCL_TMPERR" 2>/dev/null | while IFS= read -r line; do
-    # Only show our PROGRESS lines, skip Ray/torch noise
+    # Show our PROGRESS lines
     if [[ "$line" == PROGRESS:* ]]; then
         msg="${line#PROGRESS: }"
         if echo "$msg" | grep -qiE "(error|failed|exception)"; then
@@ -477,12 +478,31 @@ tail -f "$NCCL_TMPERR" 2>/dev/null | while IFS= read -r line; do
         else
             echo -e "  ${BLUE}  ${msg}${NC}"
         fi
+    # Show key NCCL debug lines (transport, IB, network selection)
+    elif echo "$line" | grep -qiE "NCCL.*(transport|IB|RoCE|rdma|NET|plugin|using|selected|connect|channel)"; then
+        echo -e "  ${CYAN}⊡ ${line}${NC}"
+    # Show NCCL errors/warnings
+    elif echo "$line" | grep -qiE "NCCL.*(error|warn|fail|timeout)"; then
+        echo -e "  ${RED}✗ ${line}${NC}"
     fi
 done &
 TAIL_PID=$!
 
-# Wait for the benchmark to finish
+# Wait for the benchmark with a timeout
+NCCL_TIMEOUT=600
+NCCL_ELAPSED=0
+while kill -0 $NCCL_PID 2>/dev/null; do
+    sleep 1
+    NCCL_ELAPSED=$((NCCL_ELAPSED + 1))
+    if [ $NCCL_ELAPSED -ge $NCCL_TIMEOUT ]; then
+        echo ""
+        print_error "NCCL benchmark timed out after ${NCCL_TIMEOUT}s"
+        kill $NCCL_PID 2>/dev/null
+        break
+    fi
+done
 wait $NCCL_PID 2>/dev/null
+NCCL_EXIT=$?
 
 # Give tail a moment to flush, then kill it
 sleep 1
@@ -490,11 +510,28 @@ kill $TAIL_PID 2>/dev/null
 wait $TAIL_PID 2>/dev/null
 
 NCCL_RESULT=$(cat "$NCCL_TMPOUT")
+
+# If benchmark failed, show the full stderr for debugging
+if [[ $NCCL_EXIT -ne 0 ]] || [[ -z "$NCCL_RESULT" ]]; then
+    echo ""
+    print_error "NCCL benchmark failed (exit code: ${NCCL_EXIT})"
+    echo ""
+    echo -e "  ${YELLOW}Full debug output:${NC}"
+    echo ""
+    # Show last 40 lines of stderr for debugging
+    tail -40 "$NCCL_TMPERR" | while IFS= read -r line; do
+        echo "  $line"
+    done
+    echo ""
+    rm -f "$NCCL_TMPOUT" "$NCCL_TMPERR"
+    exit 1
+fi
+
 rm -f "$NCCL_TMPOUT" "$NCCL_TMPERR"
 
 echo ""
 
-# Check for errors
+# Check for errors in JSON result
 nccl_error=$(echo "$NCCL_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null)
 if [[ -n "$nccl_error" && "$nccl_error" != "" ]]; then
     print_error "$nccl_error"
